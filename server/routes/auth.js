@@ -1,5 +1,6 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs'; // For password hashing
 import User from '../models/User.js';
 import { sendResetEmail } from '../utils/email.js';
 import { auth } from '../middleware/auth.js';
@@ -29,9 +30,12 @@ router.post('/register', async (req, res) => {
       }
     }
 
+    // Hash password before saving to database
+    const hashedPassword = await bcrypt.hash(password, 12);
+
     const user = new User({
       email,
-      password,
+      password: hashedPassword,
       name,
       username,
       gameData: {
@@ -84,7 +88,8 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isMatch = await user.comparePassword(password);
+    // Compare hashed password
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -134,6 +139,7 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
 
+    // Send email with reset link
     await sendResetEmail(email, token);
     
     res.json({ message: 'Password reset email sent' });
@@ -161,7 +167,7 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ message: 'Invalid or expired reset token' });
     }
 
-    user.password = password;
+    user.password = await bcrypt.hash(password, 12); // Hash new password
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
